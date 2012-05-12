@@ -89,7 +89,7 @@ func (p WebPlayerApi) West() bool {
    return p.boolCmd("move/west")
 }
 
-type DummyPlayerApi bool
+type DummyPlayerApi struct {}
 func (p DummyPlayerApi) View() string {return ""}
 func (p DummyPlayerApi) Drop() int {return 0}
 func (p DummyPlayerApi) Grab() int {return 0}

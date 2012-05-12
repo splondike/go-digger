@@ -8,15 +8,10 @@ import (
 
 type Player struct {
    CurrentWorld *World
-   api PlayerApi
 }
 
-func (p *Player) View() {
-   p.CurrentWorld.MergeViewData(p.api.View())
-}
-
-func NewPlayer(pa PlayerApi) *Player {
-   return &Player{NewWorld(), pa}
+func NewPlayer() *Player {
+   return &Player{NewWorld()}
 }
 
 type candidateFunc func(Coord, string) bool
@@ -80,6 +75,113 @@ func findNextGold(w *World) []Action {
    })
 }
 
+// Extra sneaky actions for the use of generateMoves
+type signalMoreMoves struct {
+   moreMovesSignal chan bool
+}
+
+func (m *signalMoreMoves) Do(api PlayerApi, world *World) {
+   m.moreMovesSignal <- true
+}
+
+func (m *signalMoreMoves) Verify() bool {
+   return true
+}
+
+func (m *signalMoreMoves) String() string {
+   return "signalMoreMoves"
+}
+
+type initializeNewWorld struct {
+   player *Player
+}
+
+func (m *initializeNewWorld) Do(api PlayerApi, world *World) {
+   m.player.CurrentWorld = NewWorld()
+   v := View{}
+   v.Do(api, m.player.CurrentWorld)
+   m.player.CurrentWorld.Gold = api.Carrying()
+}
+
+func (m *initializeNewWorld) Verify() bool {
+   return true
+}
+
+func (m *initializeNewWorld) String() string {
+   return "initializeNewWorld"
+}
+
+// Spew out moves to the actionPipe after signaled by needMovesSignal until we need to wait for api input
+// then block and wait for needMovesSignal to trigger again
+func generateMoves(player *Player, actionPipe chan Action, needMovesSignal chan bool) {
+   // Stuff actions into actionPipe
+   actionsToPipe := func (actions []Action) {
+      for _, action := range(actions) {
+         actionPipe <- action
+      }
+   }
+
+   // Update a world based on the actions without sending requests to the server
+   applyToDummyWorld := func (world *World, actions []Action) {
+      for _, action := range(actions) {
+         action.Do(DummyPlayerApi{}, world)
+      }
+   }
+
+   for {
+      // Wait for the main routine to signal it needs more moves generated
+      <-needMovesSignal
+
+      dummyWorld := CloneWorld(player.CurrentWorld)
+      for {
+         println(dummyWorld.String())
+         fullOfGold := dummyWorld.Gold == MAX_GOLD
+         movesToGold := findNextGold(dummyWorld)
+         movesToUnknown := findNextUnknown(dummyWorld)
+         baseMoves := findNextBase(dummyWorld)
+         haveLastGold := dummyWorld.Gold > 0 && movesToGold == nil
+
+         // Dumping gold is first priority if we can find a base
+         if baseMoves != nil && (fullOfGold || (haveLastGold && movesToUnknown == nil)) {
+            println("dumping gold")
+            actions := append(baseMoves, &Drop{})
+
+            actionsToPipe(actions)
+            applyToDummyWorld(dummyWorld, actions)
+            continue
+         }
+
+         // Next is finding more gold
+         if !fullOfGold && movesToGold != nil {
+            println("finding gold")
+            actions := append(movesToGold, &Grab{})
+
+            actionsToPipe(actions)
+            applyToDummyWorld(dummyWorld, actions)
+            continue
+         }
+
+         // Last is looking for unexplored territory
+         if movesToUnknown != nil {
+            println("exploring")
+            actionsToPipe(append(movesToUnknown, &View{}))
+
+            // We need to wait for the signal that more info's come in
+            actionPipe <- &signalMoreMoves{needMovesSignal}
+            break
+         }
+
+         // Failing all that, it's time for a new level
+         println("next level")
+         actionPipe <- &Next{}
+         actionPipe <- &initializeNewWorld{player}
+         // We need to wait for the signal that more info's come in
+         actionPipe <- &signalMoreMoves{needMovesSignal}
+         break
+      }
+   }
+}
+
 func main() {
    if len(os.Args) != 4 {
       println("Usage: host port password")
@@ -88,57 +190,20 @@ func main() {
    }
    var pa = WebPlayerApi{os.Args[1], os.Args[2], os.Args[3]}
 
-   p := NewPlayer(pa)
+   player := NewPlayer()
 
+   actionPipe := make(chan Action, 100)
+   needMovesSignal := make(chan bool)
+   go generateMoves(player, actionPipe, needMovesSignal)
+
+   // Set up the world and start the moves coming
+   actionPipe <- &initializeNewWorld{player}
+   actionPipe <- &signalMoreMoves{needMovesSignal}
+
+   // Play out the generated moves to the server
    for {
-      p.CurrentWorld = NewWorld()
-      p.View()
-      p.CurrentWorld.Gold = pa.Carrying()
-
-      // Reveal the whole map
-      for next := findNextUnknown(p.CurrentWorld);next != nil;next = findNextUnknown(p.CurrentWorld) {
-         shouldView := true
-         for _, move := range(next) {
-            move.Do(pa, p.CurrentWorld)
-            shouldView = move.Verify()
-            println("move", shouldView, p.CurrentWorld.String())
-         }
-         if shouldView {
-            p.View()
-         }
-      }
-
-      // Get all the gold
-      // TODO: Turn this into a go routine
-      for {
-         var moves []Action
-         if p.CurrentWorld.Gold == MAX_GOLD {
-            baseMoves := findNextBase(p.CurrentWorld)
-            moves = append(baseMoves, &Drop{})
-            println("drop", p.CurrentWorld.String())
-         } else {
-            // Find gold
-            goldMoves := findNextGold(p.CurrentWorld)
-
-            // If gold, get it
-            if goldMoves != nil {
-               moves = append(goldMoves, &Grab{})
-               println("get", p.CurrentWorld.String())
-            } else if p.CurrentWorld.Gold == 0 {
-               pa.Next()
-               println("next", p.CurrentWorld.String())
-               break
-            } else {
-               baseMoves := findNextBase(p.CurrentWorld)
-               println("drop2", p.CurrentWorld.String())
-               moves = append(baseMoves, &Drop{})
-            }
-         }
-
-         for _, move := range(moves) {
-            move.Do(pa, p.CurrentWorld)
-            println("move", p.CurrentWorld.String())
-         }
-      }
+      move := <-actionPipe
+      move.Do(pa, player.CurrentWorld)
+      //println(move.String(), player.CurrentWorld.String())
    }
 }

@@ -37,6 +37,15 @@ func NewWorld() *World {
    return &World{board: make(map[Coord]string), Pos: &Coord{0,0}}
 }
 
+func CloneWorld(w *World) *World {
+   cloneBoard := make(map[Coord]string)
+   for k, v := range w.board {
+      cloneBoard[k] = v
+   }
+
+   return &World{board: cloneBoard, border: w.border, Pos: &Coord{w.Pos.X,w.Pos.Y}, Gold: w.Gold}
+}
+
 type WorldIterator func(Coord, string) bool
 
 const MAX_GOLD = 3
@@ -110,24 +119,4 @@ func (w World) String() string {
    })
 
    return rtn
-}
-
-// The built in one wants float64s
-func min(one int, two int) (rtn int) {
-   if one < two {
-      rtn = one
-   } else {
-      rtn = two
-   }
-
-   return
-}
-func max(one int, two int) (rtn int) {
-   if one > two {
-      rtn = one
-   } else {
-      rtn = two
-   }
-
-   return
 }

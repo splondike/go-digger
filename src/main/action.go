@@ -22,9 +22,15 @@ type Move struct {
    rtn bool
 }
 
-type Drop struct {}
+type Drop struct{}
 
-type Grab struct {}
+type Grab struct{}
+
+type Next struct {
+   rtn bool
+}
+
+type View struct{}
 
 func NewMove(dir Direction) Move {
    return Move{dir,false}
@@ -85,17 +91,21 @@ func (m *Move) String() string {
 }
 
 func (m *Drop) Do(api PlayerApi, world *World) {
-   droppedGold := api.Drop()
+   // Update the gold count
+   ground := world.GetCoord(*world.Pos)
+   groundGold := 0
+   if gold, err := strconv.Atoi(ground); err == nil {
+      groundGold = gold
+   }
+   droppedGold := min(world.Gold, 9 - groundGold)
    world.Gold -= droppedGold
 
-   ground := world.GetCoord(*world.Pos)
+   // Notify the server
+   api.Drop()
+
+   // Update the board
    if ground == "b" {
       return
-   }
-
-   groundGold := 0
-   if gold, err := strconv.Atoi(ground); err != nil {
-      groundGold = gold
    }
    remaining := groundGold + droppedGold
    remainingStr := "."
@@ -114,10 +124,23 @@ func (m *Drop) String() string {
 }
 
 func (m *Grab) Do(api PlayerApi, world *World) {
-   grabbedGold := api.Grab()
+   ground := world.GetCoord(*world.Pos)
+   if ground == "b" {
+      return
+   }
+
+   // Update the gold count
+   groundGold := 0
+   if gold, err := strconv.Atoi(ground); err == nil {
+      groundGold = gold
+   }
+   grabbedGold := min(3 - world.Gold, groundGold)
    world.Gold += grabbedGold
 
-   groundGold, _ := strconv.Atoi(world.GetCoord(*world.Pos))
+   // Notify the server
+   api.Grab()
+
+   // Update the board
    remaining := groundGold - grabbedGold
    remainingStr := "."
    if remaining != 0 {
@@ -132,4 +155,28 @@ func (m *Grab) Verify() bool {
 
 func (m *Grab) String() string {
    return "Grab"
+}
+
+func (m *Next) Do(api PlayerApi, world *World) {
+   m.rtn = api.Next()
+}
+
+func (m *Next) Verify() bool {
+   return m.rtn
+}
+
+func (m *Next) String() string {
+   return "Next"
+}
+
+func (m *View) Do(api PlayerApi, world *World) {
+   world.MergeViewData(api.View())
+}
+
+func (m *View) Verify() bool {
+   return true
+}
+
+func (m *View) String() string {
+   return "View"
 }
