@@ -3,20 +3,20 @@ package main
 import (
    "strconv"
    "math"
+   "os"
 )
-
-var pa = WebPlayerApi{"localhost", "8066", "password"}
 
 type Player struct {
    CurrentWorld *World
+   api PlayerApi
 }
 
 func (p *Player) View() {
-   p.CurrentWorld.MergeViewData(pa.View())
+   p.CurrentWorld.MergeViewData(p.api.View())
 }
 
-func NewPlayer() *Player {
-   return &Player{NewWorld()}
+func NewPlayer(pa PlayerApi) *Player {
+   return &Player{NewWorld(), pa}
 }
 
 type candidateFunc func(Coord, string) bool
@@ -81,7 +81,14 @@ func findNextGold(w *World) []Action {
 }
 
 func main() {
-   p := NewPlayer()
+   if len(os.Args) != 4 {
+      println("Usage: host port password")
+      println("e.g. localhost 8066 password")
+      os.Exit(1)
+   }
+   var pa = WebPlayerApi{os.Args[1], os.Args[2], os.Args[3]}
+
+   p := NewPlayer(pa)
 
    for {
       p.CurrentWorld = NewWorld()
