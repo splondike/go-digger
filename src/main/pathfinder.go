@@ -117,37 +117,3 @@ func findMove(current_node Coord, next_node Coord) (rtn Move) {
 
    return
 }
-
-func FindPathLinear(w World, src Coord, dest Coord) []Move {
-   // For now we'll just do a straight line pathfind, ignoring the world
-   list := list.New()
-
-   var xMove Move
-   if src.X < dest.X {
-      xMove = NewMove(East)
-   } else {
-      xMove = NewMove(West)
-   }
-   for i:= 0.0; i < math.Abs(float64(dest.X - src.X)); i++ {
-      list.PushBack(xMove)
-   }
-
-   var yMove Move
-   if src.Y < dest.Y {
-      yMove = NewMove(South)
-   } else {
-      yMove = NewMove(North)
-   }
-   for i:= 0.0; i < math.Abs(float64(dest.Y - src.Y)); i++ {
-      list.PushBack(yMove)
-   }
-
-   // Convert to a list and return
-   rtn := make([]Move, list.Len())
-   i := 0
-   for e := list.Front(); e != nil; e = e.Next() {
-      rtn[i] = e.Value.(Move)
-      i++
-   }
-   return rtn
-}
