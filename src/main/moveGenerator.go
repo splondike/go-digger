@@ -194,3 +194,41 @@ func goldThenUnknownGenerator(world *World) ([]Action, nextAction) {
    println("next level")
    return []Action{&Next{}}, NEXT_LEVEL
 }
+
+// A move generator which prioritizes getting gold over exploring
+func UnknownThenGoldGenerator(player *Player, actionPipe chan Action, needMovesSignal chan bool) {
+   moveGeneratorTemplate(player, actionPipe, needMovesSignal, unknownThenGoldGenerator)
+}
+func unknownThenGoldGenerator(world *World) ([]Action, nextAction) {
+   println(world.String())
+   movesToUnknown := findNextUnknown(world)
+
+   // First priority is looking for unexplored territory
+   if movesToUnknown != nil {
+      println("exploring")
+      actions := append(movesToUnknown, &View{})
+      return actions, WAIT_INPUT
+   }
+
+   fullOfGold := world.Gold == MAX_GOLD
+   movesToGold := findNextGold(world)
+   baseMoves := findNextBase(world)
+   haveLastGold := world.Gold > 0 && movesToGold == nil
+   // Dumping gold is next if we can find a base
+   if baseMoves != nil && (fullOfGold || (haveLastGold && movesToUnknown == nil)) {
+      println("dumping gold")
+      actions := append(baseMoves, &Drop{})
+      return actions, CONTINUE
+   }
+
+   // Last is finding more gold
+   if !fullOfGold && movesToGold != nil {
+      println("finding gold")
+      actions := append(movesToGold, &Grab{})
+      return actions, CONTINUE
+   }
+
+   // Failing all that, it's time for a new level
+   println("next level")
+   return []Action{&Next{}}, NEXT_LEVEL
+}
